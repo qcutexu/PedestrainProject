@@ -28,7 +28,7 @@ public:
 	~Simulation();
     void setDt(float _dt){ dt= _dt; }
 
-	int isNeighbor(const People& ip, const People& jp);
+	int isNeighbor(People& ip, People& jp);
 	void searchNP();       
 
 	std::vector<People*>& getPeople() { return pvector; }
@@ -40,8 +40,8 @@ public:
 	void updateTotforce(); 
 	void updateVelocity();
 	void updateStatus();
-	void interactionpeople(People& fp, People& ep);
-	void interactionwall(People& fp, People& fw);
+	Position interactionpeople(People& fp, People& ep);
+	Position interactionwall(People& fp, People& fw);
 	void updateTime(){Time=Time+dt;};
 
 	void generatepts();  
@@ -63,11 +63,6 @@ Simulation::~Simulation()
 	std::size_t size= pvector.size();
 	for (unsigned int i= 0; i<size; i++)
 		delete pvector[i];
-}
-
-Simulation::Simulation()
-{
-	dt= Dt;
 }
 
 void Simulation::searchNP()  //|ip-jp|<k*h
@@ -100,7 +95,7 @@ void Simulation::searchNP()  //|ip-jp|<k*h
 	}
 }
 
-int Simulation::isNeighbor(const People& ip, const People& jp)
+int Simulation::isNeighbor(People& ip,  People& jp)
 {
 	float dx= fabs(ip.get_pos().getx()-jp.get_pos().getx());
 	float dy= fabs(ip.get_pos().gety()-jp.get_pos().gety());
@@ -110,7 +105,78 @@ int Simulation::isNeighbor(const People& ip, const People& jp)
 	else
 		return 0;
 }
-		
+
+Position Simulation::interactionpeople(People& fp, People& ep) 
+{
+
+	Position rij= fp.get_pos() - ep.get_pos();
+	Position eij= rij/rij.len();
+	Position eji=eij.inver();
+
+	float Di=fp.get_Di()+fp.get_td()*fp.get_velocity().len();
+	float Dj=ep.get_Di()+ep.get_td()*ep.get_velocity().len();
+
+	float dij=rij.len()-0.5*(Di+Dj);
+	if (dij<0)
+		std::cout<<"dij: negative distance"<<std::endl;
+
+	float vij=0.5*((fp.get_velocity()-ep.get_velocity())*eij + abs((fp.get_velocity()-ep.get_velocity())*eij));
+	float vji=0.5*((ep.get_velocity()-fp.get_velocity())*eji + abs((ep.get_velocity()-fp.get_velocity())*eji));
+
+	float kij=0, kji=0;
+
+	if (fp.get_velocity().len()>0)
+		kij=0.5*(fp.get_velocity()*eij + abs(fp.get_velocity()*eij) ) / (fp.get_velocity().len());
+
+	if (ep.get_velocity().len()>0)
+		kji=0.5*(ep.get_velocity()*eji + abs(ep.get_velocity()*eji) ) / (ep.get_velocity().len());
+
+	
+	//fp.set_Intp(-fp.get_m()*kij*pow((fp.get_mu()*fp.get_goalv()+vij),2)/dij*eij);
+    //ep.set_Intp(-ep.get_m()*kji*pow((ep.get_mu()*ep.get_goalv()+vji),2)/dij*eji);
+	return -fp.get_m()*kij*pow((fp.get_mu()*fp.get_goalv()+vij),2)/dij*eij;
+}
+
+Position Simulation::interactionwall(People& fp, People& fw) 
+{
+
+	Position riw= fw.get_pos() - fp.get_pos();
+	Position eiw= riw/riw.len();
+
+	float Di=fp.get_Di()+fp.get_td()*fp.get_velocity().len();
+	float diw=riw.len()-0.5*Di;
+	
+	if (diw<0)
+	{	std::cout<<"diw: negative distance"<<std::endl;
+	    std::abort();
+	}
+
+	float kiw=0;
+
+	if (fp.get_velocity().len()>0)
+		kiw=0.5*(fp.get_velocity()*eiw + abs(fp.get_velocity()*eiw) ) / (fp.get_velocity().len());
+
+	//following portion is not general, needs to be revised in future for more general cases, yifan
+	float vin;
+	if (fw.get_pos().getx()>0.9){
+		if (fw.get_pos().gety()<12)
+			vin=fp.get_velocity()*Position(1,0);
+		else
+			vin=fp.get_velocity()*Position(0,1);
+	}
+	else{
+		if (fw.get_pos().gety()<12)
+			vin=fp.get_velocity()*Position(-1,0);
+		else
+			vin=fp.get_velocity()*Position(0,1);
+	}
+	
+	//fp.set_Intp(-fp.get_m()*kiw*pow((fw.get_mu()*fp.get_goalv()+vin),2)/diw*eiw);
+    //fw.set_Intp(Position());
+	return -fp.get_m()*kiw*pow((fw.get_mu()*fp.get_goalv()+vin),2)/diw*eiw;
+
+}		
+
 void Simulation::updateTotforce()  
 {
 	std::size_t size= pvector.size();
@@ -121,7 +187,7 @@ void Simulation::updateTotforce()
 		std::set<int>& np= pvector[i]->getNP();
 		for (std::set<int>::iterator it= np.begin(); it != np.end(); it++)
 		{
-				totinteraction = totinteraction + interactionpeople(*pvector[i],*pvector[it])+ interactionwall(*pvector[i],*pvector[it]);
+				totinteraction = totinteraction + interactionpeople(*pvector[i],*pvector[*it])+ interactionwall(*pvector[i],*pvector[*it]);
 		}
 		pvector[i]->set_totforce(totinteraction);
 	}
@@ -164,75 +230,6 @@ void Simulation::updateStatus()
 }
 
 
-void Simulation::interactionpeople(People& fp, People& ep) 
-{
-
-	Position rij= fp.get_pos() - ep.get_pos();
-	Position eij= rij/rij.len();
-	Position eji=eij.inver();
-
-	float Di=fp.get_Di()+fp.get_td()*fp.get_velocity().len();
-	float Dj=ep.get_Di()+ep.get_td()*ep.get_velocity().len();
-
-	float dij=rij.len()-0.5*(Di+Dj);
-	if (dij<0)
-		std::cout<<"dij: negative distance"<<std::endl;
-
-	float vij=0.5*((fp.get_velocity()-ep.get_velocity())*eij + abs((fp.get_velocity()-ep.get_velocity())*eij));
-	float vji=0.5*((ep.get_velocity()-fp.get_velocity())*eji + abs((ep.get_velocity()-fp.get_velocity())*eji));
-
-	float kij=0, kji=0;
-
-	if (fp.get_velocity().len()>0)
-		kij=0.5*(fp.get_velocity()*eij + abs(fp.get_velocity()*eij) ) / (fp.get_velocity().len());
-
-	if (ep.get_velocity().len()>0)
-		kji=0.5*(ep.get_velocity()*eji + abs(ep.get_velocity()*eji) ) / (ep.get_velocity().len());
-
-	
-	fp.set_Intp(-fp.get_m()*kij*pow((fp.get_mu()*fp.get_goalv()+vij),2)/dij*eij);
-    ep.set_Intp(-ep.get_m()*kji*pow((ep.get_mu()*ep.get_goalv()+vji),2)/dij*eji);
-	
-}
-
-void Simulation::interactionwall(People& fp, People& fw) 
-{
-
-	Position riw= fw.get_pos() - fp.get_pos();
-	Position eiw= riw/riw.len();
-
-	float Di=fp.get_Di()+fp.get_td()*fp.get_velocity().len();
-	float diw=riw.len()-0.5*Di;
-	
-	if (diw<0)
-	{	std::cout<<"diw: negative distance"<<std::endl;
-	    std::abort();
-	}
-
-	float kiw=0;
-
-	if (fp.get_velocity().len()>0)
-		kiw=0.5*(fp.get_velocity()*eiw + abs(fp.get_velocity()*eiw) ) / (fp.get_velocity().len());
-
-	//following portion is not general, needs to be revised in future for more general cases, yifan
-	float vin;
-	if (fw.get_pos().getx()>0.9){
-		if (fw.get_pos().gety()<12)
-			vin=fp.get_velocity()*Position(1,0);
-		else
-			vin=fp.get_velocity()*Position(0,1);
-	}
-	else{
-		if (fw.get_pos().gety()<12)
-			vin=fp.get_velocity()*Position(-1,0);
-		else
-			vin=fp.get_velocity()*Position(0,1);
-	}
-	
-	fp.set_Intp(-fp.get_m()*kiw*pow((fw.get_mu()*fp.get_goalv()+vin),2)/diw*eiw);
-    fw.set_Intp(Position());
-	
-}
 
 void Simulation::generatepts() 
 {
